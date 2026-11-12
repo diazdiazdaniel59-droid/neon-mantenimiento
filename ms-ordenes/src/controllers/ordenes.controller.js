@@ -19,12 +19,17 @@ const PRIORIDADES = ['baja', 'media', 'alta', 'urgente'];
 
 async function create(req, res) {
   const cliente_id = uuid(req.user.id, 'cliente_id');
+  const activo_id = requiredString(req.body.activo_id, 'activo_id', { min: 1, max: 120 });
+  const activo_nombre = optionalString(req.body.activo_nombre, 'activo_nombre', { max: 160 });
+  const titulo = requiredString(req.body.titulo, 'titulo', { min: 3, max: 160 });
   const tipo = oneOf(req.body.tipo, TIPOS, 'tipo');
   const prioridad = oneOf(req.body.prioridad, PRIORIDADES, 'prioridad', { required: false }) || 'media';
   const descripcion = requiredString(req.body.descripcion, 'descripcion', { min: 10, max: 2000 });
   const tecnico_id = req.body.tecnico_id ? uuid(req.body.tecnico_id, 'tecnico_id') : undefined;
 
-  const orden = await ordenesService.createOrden({ cliente_id, tipo, prioridad, descripcion, tecnico_id });
+  const orden = await ordenesService.createOrden({
+    cliente_id, activo_id, activo_nombre, titulo, tipo, prioridad, descripcion, tecnico_id,
+  });
   res.status(201).json({ orden });
 }
 
