@@ -1,7 +1,7 @@
 services:
   # ---------------------------------------------------------------------------
-  # PostgreSQL Free temporal para autenticación (Render permite una sola BD Free activa).
-  # Órdenes e inventario se agregan al Blueprint cuando haya URLs PostgreSQL disponibles.
+  # PostgreSQL Free temporal compartido por usuarios, órdenes e inventario.
+  # Render permite una sola BD Free activa en este workspace.
   # MongoDB Atlas y RabbitMQ CloudAMQP siguen siendo proveedores externos.
   #
   # Las URLs entre servicios usan directamente el hostname publico de Render.
@@ -33,6 +33,56 @@ services:
       - fromGroup: neon-config
       - key: MONGODB_URI
         sync: false
+
+  - type: web
+    name: neon-ms-ordenes
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./ms-ordenes
+    dockerfilePath: ./ms-ordenes/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: neon-config
+      - key: DATABASE_URL
+        fromDatabase:
+          name: neon-usuarios-db
+          property: connectionString
+      - key: RABBITMQ_URL
+        fromService:
+          name: neon-ms-notificaciones
+          type: web
+          envVarKey: RABBITMQ_URL
+      - key: ACTIVOS_SERVICE_URL
+        fromService:
+          name: neon-ms-activos
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      - key: INVENTARIO_SERVICE_URL
+        fromService:
+          name: neon-ms-inventario
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      - key: USUARIOS_SERVICE_URL
+        fromService:
+          name: neon-ms-usuarios
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+
+  - type: web
+    name: neon-ms-inventario
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./ms-inventario
+    dockerfilePath: ./ms-inventario/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: neon-config
+      - key: DATABASE_URL
+        fromDatabase:
+          name: neon-usuarios-db
+          property: connectionString
 
   - type: web
     name: neon-ms-notificaciones
@@ -68,6 +118,16 @@ services:
       - key: ACTIVOS_SERVICE_URL
         fromService:
           name: neon-ms-activos
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      - key: ORDENES_SERVICE_URL
+        fromService:
+          name: neon-ms-ordenes
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      - key: INVENTARIO_SERVICE_URL
+        fromService:
+          name: neon-ms-inventario
           type: web
           envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: NOTIFICACIONES_SERVICE_URL
