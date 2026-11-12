@@ -12,6 +12,9 @@ const CREATE_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS ordenes (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cliente_id    UUID      NOT NULL,
+    activo_id     VARCHAR(120) NOT NULL DEFAULT '',
+    activo_nombre VARCHAR(160),
+    titulo        VARCHAR(160) NOT NULL DEFAULT '',
     tipo          VARCHAR(20) NOT NULL
                   CHECK (tipo IN ('preventivo', 'correctivo', 'predictivo', 'mejora')),
     prioridad     VARCHAR(10) NOT NULL DEFAULT 'media'
@@ -41,6 +44,10 @@ const CREATE_ORDENES_REPUESTOS_SQL = `
 `;
 
 const ALTER_TABLE_SQL = `
+  ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS activo_id VARCHAR(120) NOT NULL DEFAULT '';
+  ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS activo_nombre VARCHAR(160);
+  ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS titulo VARCHAR(160) NOT NULL DEFAULT '';
+  UPDATE ordenes SET titulo = LEFT(descripcion, 160) WHERE titulo = '';
   ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS evidencia_base64 TEXT;
   ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS evidencia_nombre VARCHAR(255);
 `;
