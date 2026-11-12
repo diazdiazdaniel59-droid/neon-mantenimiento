@@ -16,7 +16,7 @@ services:
     plan: free
     region: oregon
     dockerContext: ./ms-usuarios
-    dockerfilePath: ./ms-usuarios/Dockerfile
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
       - fromGroup: neon-config
@@ -34,7 +34,7 @@ services:
     plan: free
     region: oregon
     dockerContext: ./ms-activos
-    dockerfilePath: ./ms-activos/Dockerfile
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
       - fromGroup: neon-config
@@ -52,7 +52,7 @@ services:
     plan: free
     region: oregon
     dockerContext: ./ms-ordenes
-    dockerfilePath: ./ms-ordenes/Dockerfile
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
       - fromGroup: neon-config
@@ -87,7 +87,7 @@ services:
     plan: free
     region: oregon
     dockerContext: ./ms-inventario
-    dockerfilePath: ./ms-inventario/Dockerfile
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
       - fromGroup: neon-config
@@ -105,7 +105,7 @@ services:
     plan: free
     region: oregon
     dockerContext: ./ms-notificaciones
-    dockerfilePath: ./ms-notificaciones/Dockerfile
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
       - fromGroup: neon-config
@@ -126,7 +126,7 @@ services:
     plan: free
     region: oregon
     dockerContext: ./api-gateway
-    dockerfilePath: ./api-gateway/Dockerfile
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
       - fromGroup: neon-config
