@@ -42,13 +42,18 @@ export default function OrdenesPage() {
   const guardar = async (e) => {
     e.preventDefault();
     setError(null);
+    const descripcion = form.descripcion.trim();
+    if (descripcion.length < 10) {
+      setError(new Error('La descripción debe tener al menos 10 caracteres.'));
+      return;
+    }
     setGuardando(true);
     try {
       await ordenesApi.create({
         activo_id: form.activo_id.trim(),
         activo_nombre: form.activo_nombre.trim() || undefined,
         titulo: form.titulo.trim(),
-        descripcion: form.descripcion.trim() || undefined,
+        descripcion,
         tipo: form.tipo,
         prioridad: form.prioridad,
       });
@@ -231,11 +236,14 @@ export default function OrdenesPage() {
                 required
               />
             </Field>
-            <Field label="Descripción">
+            <Field label="Descripción" hint="Describe el problema o trabajo requerido (mínimo 10 caracteres).">
               <textarea
                 rows={3}
                 value={form.descripcion}
                 onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
+                minLength={10}
+                maxLength={2000}
+                required
               />
             </Field>
             <div className="grid-2">
