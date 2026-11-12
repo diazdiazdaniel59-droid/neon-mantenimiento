@@ -1,11 +1,8 @@
 services:
   # ---------------------------------------------------------------------------
   # Microservicios (Docker). Cada uno usa su propia base de datos.
-  # DATABASE_URL / MONGODB_URI / RABBITMQ_URL se piden al crear el Blueprint
-  # (sync: false) porque apuntan a proveedores externos:
-  #   - PostgreSQL administrado -> Neon (3 bases: usuarios, ordenes, inventario)
-  #   - MongoDB                -> MongoDB Atlas
-  #   - RabbitMQ               -> CloudAMQP
+  # PostgreSQL se crea como recursos de Render y se conecta automáticamente.
+  # MongoDB Atlas y RabbitMQ CloudAMQP siguen siendo proveedores externos.
   #
   # PUBLIC_HOST expone el hostname publico del servicio para que otros
   # servicios lo referencien (self-reference de RENDER_EXTERNAL_HOSTNAME).
@@ -21,7 +18,9 @@ services:
     envVars:
       - fromGroup: neon-config
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: neon-usuarios-db
+          property: connectionString
       - key: PUBLIC_HOST
         fromService:
           name: neon-ms-usuarios
@@ -57,7 +56,9 @@ services:
     envVars:
       - fromGroup: neon-config
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: neon-ordenes-db
+          property: connectionString
       - key: RABBITMQ_URL
         sync: false
       - key: ACTIVOS_SERVICE_URL
@@ -92,7 +93,9 @@ services:
     envVars:
       - fromGroup: neon-config
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: neon-inventario-db
+          property: connectionString
       - key: PUBLIC_HOST
         fromService:
           name: neon-ms-inventario
@@ -174,6 +177,24 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+
+databases:
+  # Plan gratuito temporal: Render Postgres Free expira 30 días después de crearse.
+  - name: neon-usuarios-db
+    databaseName: usuarios
+    user: neon_usuarios
+    plan: free
+    region: oregon
+  - name: neon-ordenes-db
+    databaseName: ordenes
+    user: neon_ordenes
+    plan: free
+    region: oregon
+  - name: neon-inventario-db
+    databaseName: inventario
+    user: neon_inventario
+    plan: free
+    region: oregon
 
 envVarGroups:
   - name: neon-config
