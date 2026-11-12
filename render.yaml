@@ -1,0 +1,210 @@
+services:
+  # ---------------------------------------------------------------------------
+  # Microservicios (Docker). Cada uno usa su propia base de datos.
+  # DATABASE_URL / MONGODB_URI / RABBITMQ_URL se piden al crear el Blueprint
+  # (sync: false) porque apuntan a proveedores externos:
+  #   - PostgreSQL administrado -> Neon (3 bases: usuarios, ordenes, inventario)
+  #   - MongoDB                -> MongoDB Atlas
+  #   - RabbitMQ               -> CloudAMQP
+  #
+  # PUBLIC_HOST expone el hostname publico del servicio para que otros
+  # servicios lo referencien (self-reference de RENDER_EXTERNAL_HOSTNAME).
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: neon-ms-usuarios
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./ms-usuarios
+    dockerfilePath: ./ms-usuarios/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: neon-config
+      - key: DATABASE_URL
+        sync: false
+      - key: PUBLIC_HOST
+        fromService:
+          name: neon-ms-usuarios
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+
+  - type: web
+    name: neon-ms-activos
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./ms-activos
+    dockerfilePath: ./ms-activos/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: neon-config
+      - key: MONGODB_URI
+        sync: false
+      - key: PUBLIC_HOST
+        fromService:
+          name: neon-ms-activos
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+
+  - type: web
+    name: neon-ms-ordenes
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./ms-ordenes
+    dockerfilePath: ./ms-ordenes/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: neon-config
+      - key: DATABASE_URL
+        sync: false
+      - key: RABBITMQ_URL
+        sync: false
+      - key: ACTIVOS_SERVICE_URL
+        fromService:
+          name: neon-ms-activos
+          type: web
+          envVarKey: PUBLIC_HOST
+      - key: INVENTARIO_SERVICE_URL
+        fromService:
+          name: neon-ms-inventario
+          type: web
+          envVarKey: PUBLIC_HOST
+      - key: USUARIOS_SERVICE_URL
+        fromService:
+          name: neon-ms-usuarios
+          type: web
+          envVarKey: PUBLIC_HOST
+      - key: PUBLIC_HOST
+        fromService:
+          name: neon-ms-ordenes
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+
+  - type: web
+    name: neon-ms-inventario
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./ms-inventario
+    dockerfilePath: ./ms-inventario/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: neon-config
+      - key: DATABASE_URL
+        sync: false
+      - key: PUBLIC_HOST
+        fromService:
+          name: neon-ms-inventario
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+
+  - type: web
+    name: neon-ms-notificaciones
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./ms-notificaciones
+    dockerfilePath: ./ms-notificaciones/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: neon-config
+      - key: RABBITMQ_URL
+        sync: false
+      - key: PUBLIC_HOST
+        fromService:
+          name: neon-ms-notificaciones
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+
+  # ---------------------------------------------------------------------------
+  # API Gateway: punto unico de entrada publico.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: neon-api-gateway
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./api-gateway
+    dockerfilePath: ./api-gateway/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: neon-config
+      - key: USERS_SERVICE_URL
+        fromService:
+          name: neon-ms-usuarios
+          type: web
+          envVarKey: PUBLIC_HOST
+      - key: ACTIVOS_SERVICE_URL
+        fromService:
+          name: neon-ms-activos
+          type: web
+          envVarKey: PUBLIC_HOST
+      - key: ORDENES_SERVICE_URL
+        fromService:
+          name: neon-ms-ordenes
+          type: web
+          envVarKey: PUBLIC_HOST
+      - key: INVENTARIO_SERVICE_URL
+        fromService:
+          name: neon-ms-inventario
+          type: web
+          envVarKey: PUBLIC_HOST
+      - key: NOTIFICACIONES_SERVICE_URL
+        fromService:
+          name: neon-ms-notificaciones
+          type: web
+          envVarKey: PUBLIC_HOST
+
+  # ---------------------------------------------------------------------------
+  # Frontend: sitio estatico (Vite + React). La URL del Gateway se hornea en
+  # build-time con VITE_API_URL.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: neon-frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://neon-api-gateway.onrender.com
+      - key: SKIP_INSTALL_DEPS
+        value: 'true'
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+envVarGroups:
+  - name: neon-config
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ISSUER
+        value: neon
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: BCRYPT_ROUNDS
+        value: '10'
+      - key: PGSSLMODE
+        value: require
+      - key: RABBITMQ_EXCHANGE
+        value: neon_events
+      - key: RABBITMQ_EXCHANGE_TYPE
+        value: topic
+      - key: NOTIF_QUEUE
+        value: neon_notificaciones_queue
+      - key: CORS_ORIGIN
+        value: '*'
+      - key: PROXY_TIMEOUT_MS
+        value: '60000'
+      - key: SEED_ADMIN_EMAIL
+        value: admin@neon.com
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_ADMIN_NOMBRE
+        value: Administrador NEON

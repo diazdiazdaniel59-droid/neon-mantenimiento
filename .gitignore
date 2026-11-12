@@ -1,0 +1,29 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno (nunca se versionan; usar .env.example como plantilla)
+.env
+.env.local
+.env.*.local
+
+# Build / distribucion
+dist/
+build/
+out/
+
+# Registros y temporales
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+tmp/
+.cache/
+
+# Cobertura y reportes
+coverage/
+.nyc_output/
+
+# Configuracion local de editores / agentes
+.claude/
+.vscode/
+.idea/

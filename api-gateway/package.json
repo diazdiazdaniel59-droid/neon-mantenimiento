@@ -1,0 +1,28 @@
+{
+  "name": "neon-api-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NEON - API Gateway: punto unico de entrada, verifica el JWT y hace proxy a los microservicios",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "http-proxy-middleware": "^3.0.3",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "eslint": "^9.13.0",
+    "globals": "^15.11.0"
+  }
+}

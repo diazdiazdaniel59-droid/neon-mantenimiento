@@ -1,0 +1,375 @@
+# =============================================================================
+# NEON - Sistema de Gestion de Mantenimiento
+# Monorepo de microservicios | Grupo 8 (Juan Luis De La Espriella & Daniel Diaz)
+# FASE 1: Infraestructura raiz y contenedores base
+#
+# - Red bridge unica: neon-net
+# - Patron Database-per-Service: 3 bases PostgreSQL independientes + 1 MongoDB
+# - Broker: RabbitMQ (exchange neon_events) para eventos de ordenes
+# - Cero valores quemados: toda configuracion se inyecta desde .env
+#   (los `:-` son SOLO fallbacks de desarrollo local)
+#
+# Levantar solo infraestructura (FASE 1):   docker compose up -d
+# Levantar todo (fases posteriores):        docker compose --profile app up -d --build
+# =============================================================================
+name: neon
+
+networks:
+  neon-net:
+    name: neon-net
+    driver: bridge
+
+volumes:
+  neon_pgdata:
+  neon_mongodata:
+  neon_rabbitmqdata:
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1) PostgreSQL 15 - anfitrion de las 3 bases independientes.
+  #    Las BDs y roles se crean automaticamente en el primer arranque mediante
+  #    ./init-scripts/init-databases.sql montado en /docker-entrypoint-initdb.d
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: neon-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-neon_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-neon_admin_dev_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      NEON_USUARIOS_DB_PASSWORD: ${NEON_USUARIOS_DB_PASSWORD:-neon_usuarios_dev_pass}
+      NEON_ORDENES_DB_PASSWORD: ${NEON_ORDENES_DB_PASSWORD:-neon_ordenes_dev_pass}
+      NEON_INVENTARIO_DB_PASSWORD: ${NEON_INVENTARIO_DB_PASSWORD:-neon_inventario_dev_pass}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - neon_pgdata:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 2) MongoDB 6 - base de datos de ms-activos (documentos de activos)
+  # ---------------------------------------------------------------------------
+  mongo:
+    image: mongo:6
+    container_name: neon-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-neon_admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-mongo_dev_pass}
+      MONGO_INITDB_DATABASE: neon_activos_db
+    ports:
+      - "${MONGO_HOST_PORT:-27017}:27017"
+    volumes:
+      - neon_mongodata:/data/db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh -u "$${MONGO_INITDB_ROOT_USERNAME}" -p "$${MONGO_INITDB_ROOT_PASSWORD}"
+          --quiet --eval 'quit(db.adminCommand({ping: 1}).ok ? 0 : 2)'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 3) RabbitMQ 3 (management) - broker de eventos asincronos.
+  #    Exchange: neon_events | Cola notificaciones: neon_notificaciones_queue
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: neon-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-neon_app}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-rabbit_dev_pass}
+    ports:
+      - "${RABBITMQ_HOST_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_HOST_PORT:-15672}:15672"
+    volumes:
+      - neon_rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 4) API Gateway - punto unico de entrada del trafico externo (puerto 3000).
+  #    Verifica el JWT y hace proxy hacia los servicios internos de la red.
+  #    Perfil "app": se activa cuando exista su codigo (fases siguientes).
+  # ---------------------------------------------------------------------------
+  api-gateway:
+    build:
+      context: ./api-gateway
+    image: neon-api-gateway:latest
+    container_name: neon-api-gateway
+    profiles: ["app"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${GATEWAY_PORT:-3000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:-neon_dev_secret_cambiar_en_produccion}
+      JWT_ISSUER: ${JWT_ISSUER:-neon}
+      USERS_SERVICE_URL: http://ms-usuarios:${USUARIOS_PORT:-3001}
+      ACTIVOS_SERVICE_URL: http://ms-activos:${ACTIVOS_PORT:-3002}
+      ORDENES_SERVICE_URL: http://ms-ordenes:${ORDENES_PORT:-3003}
+      INVENTARIO_SERVICE_URL: http://ms-inventario:${INVENTARIO_PORT:-3004}
+      NOTIFICACIONES_SERVICE_URL: http://ms-notificaciones:3005
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      PROXY_TIMEOUT_MS: ${PROXY_TIMEOUT_MS:-15000}
+    ports:
+      - "${GATEWAY_HOST_PORT:-3000}:${GATEWAY_PORT:-3000}"
+    # NOTA (desarrollo por fases): el Gateway depende de los servicios ya
+    # implementados. Al completar cada fase se agrega aqui la nueva dependencia.
+    depends_on:
+      ms-usuarios:
+        condition: service_healthy
+      ms-activos:
+        condition: service_healthy
+      ms-ordenes:
+        condition: service_healthy
+      ms-inventario:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null "http://127.0.0.1:$${PORT}/health" || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 5) ms-usuarios - autenticacion y gestion de usuarios (PostgreSQL)
+  # ---------------------------------------------------------------------------
+  ms-usuarios:
+    build:
+      context: ./ms-usuarios
+    image: neon-ms-usuarios:latest
+    container_name: neon-ms-usuarios
+    profiles: ["app"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${USUARIOS_PORT:-3001}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: neon_usuarios_db
+      PGUSER: neon_usuarios_user
+      PGPASSWORD: ${NEON_USUARIOS_DB_PASSWORD:-neon_usuarios_dev_pass}
+      JWT_SECRET: ${JWT_SECRET:-neon_dev_secret_cambiar_en_produccion}
+      JWT_ISSUER: ${JWT_ISSUER:-neon}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_ADMIN_NOMBRE: ${SEED_ADMIN_NOMBRE:-Administrador NEON}
+    expose:
+      - "${USUARIOS_PORT:-3001}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null "http://127.0.0.1:$${PORT}/health" || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 6) ms-activos - catalogo de activos/equipos (MongoDB)
+  # ---------------------------------------------------------------------------
+  ms-activos:
+    build:
+      context: ./ms-activos
+    image: neon-ms-activos:latest
+    container_name: neon-ms-activos
+    profiles: ["app"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${ACTIVOS_PORT:-3002}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://neon_admin:mongo_dev_pass@mongo:27017/neon_activos_db?authSource=admin}
+      JWT_SECRET: ${JWT_SECRET:-neon_dev_secret_cambiar_en_produccion}
+      JWT_ISSUER: ${JWT_ISSUER:-neon}
+    expose:
+      - "${ACTIVOS_PORT:-3002}"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null "http://127.0.0.1:$${PORT}/health" || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 7) ms-ordenes - ordenes de mantenimiento (PostgreSQL) + publicador de
+  #    eventos a RabbitMQ (orden.creada, orden.cerrada)
+  # ---------------------------------------------------------------------------
+  ms-ordenes:
+    build:
+      context: ./ms-ordenes
+    image: neon-ms-ordenes:latest
+    container_name: neon-ms-ordenes
+    profiles: ["app"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${ORDENES_PORT:-3003}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: neon_ordenes_db
+      PGUSER: neon_ordenes_user
+      PGPASSWORD: ${NEON_ORDENES_DB_PASSWORD:-neon_ordenes_dev_pass}
+      JWT_SECRET: ${JWT_SECRET:-neon_dev_secret_cambiar_en_produccion}
+      JWT_ISSUER: ${JWT_ISSUER:-neon}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://neon_app:rabbit_dev_pass@rabbitmq:5672}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-neon_events}
+      RABBITMQ_EXCHANGE_TYPE: ${RABBITMQ_EXCHANGE_TYPE:-topic}
+    expose:
+      - "${ORDENES_PORT:-3003}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null "http://127.0.0.1:$${PORT}/health" || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 8) ms-inventario - repuestos y existencias (PostgreSQL)
+  # ---------------------------------------------------------------------------
+  ms-inventario:
+    build:
+      context: ./ms-inventario
+    image: neon-ms-inventario:latest
+    container_name: neon-ms-inventario
+    profiles: ["app"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${INVENTARIO_PORT:-3004}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: neon_inventario_db
+      PGUSER: neon_inventario_user
+      PGPASSWORD: ${NEON_INVENTARIO_DB_PASSWORD:-neon_inventario_dev_pass}
+      JWT_SECRET: ${JWT_SECRET:-neon_dev_secret_cambiar_en_produccion}
+      JWT_ISSUER: ${JWT_ISSUER:-neon}
+    expose:
+      - "${INVENTARIO_PORT:-3004}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null "http://127.0.0.1:$${PORT}/health" || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 9) ms-notificaciones - worker consumidor de eventos (sin API HTTP).
+  #    Escucha el exchange neon_events (routing keys orden.#) y envia alertas.
+  # ---------------------------------------------------------------------------
+  ms-notificaciones:
+    build:
+      context: ./ms-notificaciones
+    image: neon-ms-notificaciones:latest
+    container_name: neon-ms-notificaciones
+    profiles: ["app"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: ${NOTIFICACIONES_PORT:-3005}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://neon_app:rabbit_dev_pass@rabbitmq:5672}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-neon_events}
+      RABBITMQ_EXCHANGE_TYPE: ${RABBITMQ_EXCHANGE_TYPE:-topic}
+      NOTIF_QUEUE: ${NOTIF_QUEUE:-neon_notificaciones_queue}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-neon@localhost}
+      NOTIF_TO_EMAIL: ${NOTIF_TO_EMAIL:-}
+    ports:
+      - "${NOTIFICACIONES_HOST_PORT:-3005}:${NOTIFICACIONES_PORT:-3005}"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null "http://127.0.0.1:3005/health" || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [neon-net]
+
+  # ---------------------------------------------------------------------------
+  # 10) frontend - SPA React (Vite) compilada y servida por Nginx.
+  #     La URL del API Gateway se hornea en build-time via build arg VITE_API_URL.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    image: neon-frontend:latest
+    container_name: neon-frontend
+    profiles: ["app"]
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_HOST_PORT:-8080}:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null "http://127.0.0.1/health" || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [neon-net]
