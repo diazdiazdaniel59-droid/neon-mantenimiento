@@ -1,7 +1,7 @@
 services:
   # ---------------------------------------------------------------------------
-  # Microservicios (Docker). Cada uno usa su propia base de datos.
-  # PostgreSQL se crea como recursos de Render y se conecta automáticamente.
+  # PostgreSQL Free temporal para autenticación (Render permite una sola BD Free activa).
+  # Órdenes e inventario se agregan al Blueprint cuando haya URLs PostgreSQL disponibles.
   # MongoDB Atlas y RabbitMQ CloudAMQP siguen siendo proveedores externos.
   #
   # Las URLs entre servicios usan directamente el hostname publico de Render.
@@ -33,53 +33,6 @@ services:
       - fromGroup: neon-config
       - key: MONGODB_URI
         sync: false
-
-  - type: web
-    name: neon-ms-ordenes
-    runtime: docker
-    plan: free
-    region: oregon
-    dockerContext: ./ms-ordenes
-    dockerfilePath: ./ms-ordenes/Dockerfile
-    healthCheckPath: /health
-    envVars:
-      - fromGroup: neon-config
-      - key: DATABASE_URL
-        fromDatabase:
-          name: neon-ordenes-db
-          property: connectionString
-      - key: RABBITMQ_URL
-        sync: false
-      - key: ACTIVOS_SERVICE_URL
-        fromService:
-          name: neon-ms-activos
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: INVENTARIO_SERVICE_URL
-        fromService:
-          name: neon-ms-inventario
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: USUARIOS_SERVICE_URL
-        fromService:
-          name: neon-ms-usuarios
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-
-  - type: web
-    name: neon-ms-inventario
-    runtime: docker
-    plan: free
-    region: oregon
-    dockerContext: ./ms-inventario
-    dockerfilePath: ./ms-inventario/Dockerfile
-    healthCheckPath: /health
-    envVars:
-      - fromGroup: neon-config
-      - key: DATABASE_URL
-        fromDatabase:
-          name: neon-inventario-db
-          property: connectionString
 
   - type: web
     name: neon-ms-notificaciones
@@ -117,16 +70,6 @@ services:
           name: neon-ms-activos
           type: web
           envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: ORDENES_SERVICE_URL
-        fromService:
-          name: neon-ms-ordenes
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: INVENTARIO_SERVICE_URL
-        fromService:
-          name: neon-ms-inventario
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: NOTIFICACIONES_SERVICE_URL
         fromService:
           name: neon-ms-notificaciones
@@ -144,7 +87,10 @@ services:
     staticPublishPath: ./frontend/dist
     envVars:
       - key: VITE_API_URL
-        value: https://neon-api-gateway.onrender.com
+        fromService:
+          name: neon-api-gateway
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: SKIP_INSTALL_DEPS
         value: 'true'
     routes:
@@ -157,16 +103,6 @@ databases:
   - name: neon-usuarios-db
     databaseName: usuarios
     user: neon_usuarios
-    plan: free
-    region: oregon
-  - name: neon-ordenes-db
-    databaseName: ordenes
-    user: neon_ordenes
-    plan: free
-    region: oregon
-  - name: neon-inventario-db
-    databaseName: inventario
-    user: neon_inventario
     plan: free
     region: oregon
 
