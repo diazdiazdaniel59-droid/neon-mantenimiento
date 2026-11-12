@@ -158,6 +158,7 @@ const BOTTOM_NAV_ITEMS = {
   admin: [
     { to: '/', label: 'Panel', icon: Icons.LayoutDashboard },
     { to: '/ordenes', label: 'Órdenes', icon: Icons.ListTodo },
+    { to: '/usuarios', label: 'Usuarios', icon: Icons.Users },
     { to: '/activos', label: 'Activos', icon: Icons.Box },
     { to: '/inventario', label: 'Inventario', icon: Icons.Package },
   ],
@@ -626,7 +627,10 @@ export function Layout() {
 
       {/* Bottom Navigation Bar (Móvil) */}
       <nav className="bottom-nav" aria-label="Navegación principal móvil">
-        <div className="bottom-nav-inner">
+        <div
+          className="bottom-nav-inner"
+          style={{ gridTemplateColumns: "repeat(" + bottomNavItems.length + ", minmax(0, 1fr))" }}
+        >
           {bottomNavItems.map((item, idx) => (
             <NavLink
               key={item.to}
