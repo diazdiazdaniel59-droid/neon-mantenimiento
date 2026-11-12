@@ -10,7 +10,7 @@ const publisher = require('../broker/publisher');
 const events = require('../events/ordenes.events');
 
 const PUBLIC_COLUMNS = `
-  id, cliente_id, tipo, prioridad, estado, descripcion,
+  id, cliente_id, activo_id, activo_nombre, titulo, tipo, prioridad, estado, descripcion,
   tecnico_id, fecha_solicitud, fecha_cierre, created_at, updated_at,
   evidencia_base64, evidencia_nombre
 `;
@@ -20,15 +20,22 @@ const REPUESTOS_COLUMNS = `
 `;
 
 function toPublic(row) {
-  return row ? { ...row } : null;
+  return row
+    ? {
+        ...row,
+        titulo: row.titulo || (row.descripcion || '').slice(0, 160),
+        activo_id: row.activo_id || '',
+        activo_nombre: row.activo_nombre || null,
+      }
+    : null;
 }
 
-async function createOrden({ cliente_id, tipo, prioridad, descripcion, tecnico_id }) {
+async function createOrden({ cliente_id, activo_id, activo_nombre, titulo, tipo, prioridad, descripcion, tecnico_id }) {
   const { rows } = await pool.query(
-    `INSERT INTO ordenes (cliente_id, tipo, prioridad, descripcion, tecnico_id)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO ordenes (cliente_id, activo_id, activo_nombre, titulo, tipo, prioridad, descripcion, tecnico_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING ${PUBLIC_COLUMNS}`,
-    [cliente_id, tipo, prioridad, descripcion, tecnico_id || null]
+    [cliente_id, activo_id, activo_nombre || null, titulo, tipo, prioridad, descripcion, tecnico_id || null]
   );
   const orden = rows[0];
 
