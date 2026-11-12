@@ -4,8 +4,7 @@ services:
   # PostgreSQL se crea como recursos de Render y se conecta automáticamente.
   # MongoDB Atlas y RabbitMQ CloudAMQP siguen siendo proveedores externos.
   #
-  # PUBLIC_HOST expone el hostname publico del servicio para que otros
-  # servicios lo referencien (self-reference de RENDER_EXTERNAL_HOSTNAME).
+  # Las URLs entre servicios usan directamente el hostname publico de Render.
   # ---------------------------------------------------------------------------
   - type: web
     name: neon-ms-usuarios
@@ -21,11 +20,6 @@ services:
         fromDatabase:
           name: neon-usuarios-db
           property: connectionString
-      - key: PUBLIC_HOST
-        fromService:
-          name: neon-ms-usuarios
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
 
   - type: web
     name: neon-ms-activos
@@ -39,11 +33,6 @@ services:
       - fromGroup: neon-config
       - key: MONGODB_URI
         sync: false
-      - key: PUBLIC_HOST
-        fromService:
-          name: neon-ms-activos
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
 
   - type: web
     name: neon-ms-ordenes
@@ -65,20 +54,15 @@ services:
         fromService:
           name: neon-ms-activos
           type: web
-          envVarKey: PUBLIC_HOST
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: INVENTARIO_SERVICE_URL
         fromService:
           name: neon-ms-inventario
           type: web
-          envVarKey: PUBLIC_HOST
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: USUARIOS_SERVICE_URL
         fromService:
           name: neon-ms-usuarios
-          type: web
-          envVarKey: PUBLIC_HOST
-      - key: PUBLIC_HOST
-        fromService:
-          name: neon-ms-ordenes
           type: web
           envVarKey: RENDER_EXTERNAL_HOSTNAME
 
@@ -96,11 +80,6 @@ services:
         fromDatabase:
           name: neon-inventario-db
           property: connectionString
-      - key: PUBLIC_HOST
-        fromService:
-          name: neon-ms-inventario
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
 
   - type: web
     name: neon-ms-notificaciones
@@ -114,11 +93,6 @@ services:
       - fromGroup: neon-config
       - key: RABBITMQ_URL
         sync: false
-      - key: PUBLIC_HOST
-        fromService:
-          name: neon-ms-notificaciones
-          type: web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
 
   # ---------------------------------------------------------------------------
   # API Gateway: punto unico de entrada publico.
@@ -137,27 +111,27 @@ services:
         fromService:
           name: neon-ms-usuarios
           type: web
-          envVarKey: PUBLIC_HOST
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: ACTIVOS_SERVICE_URL
         fromService:
           name: neon-ms-activos
           type: web
-          envVarKey: PUBLIC_HOST
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: ORDENES_SERVICE_URL
         fromService:
           name: neon-ms-ordenes
           type: web
-          envVarKey: PUBLIC_HOST
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: INVENTARIO_SERVICE_URL
         fromService:
           name: neon-ms-inventario
           type: web
-          envVarKey: PUBLIC_HOST
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: NOTIFICACIONES_SERVICE_URL
         fromService:
           name: neon-ms-notificaciones
           type: web
-          envVarKey: PUBLIC_HOST
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
 
   # ---------------------------------------------------------------------------
   # Frontend: sitio estatico (Vite + React). La URL del Gateway se hornea en
